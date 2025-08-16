@@ -1,0 +1,387 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Corepay Guardian AI — Dashboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700;800&display=swap" rel="stylesheet">
+  <!-- Chart.js CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <!-- Socket.IO client CDN -->
+  <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+  <style>
+    :root{
+      --bg:#0f1724; /* dark navy */
+      --card:#0b1220;
+      --muted:#9aa4b2;
+      --accent:#06b6d4; /* teal */
+      --danger:#ff6b6b;
+      --glass: rgba(255,255,255,0.03);
+      --glass-2: rgba(255,255,255,0.02);
+      font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial;
+    }
+    *{box-sizing:border-box}
+    body{background:linear-gradient(180deg, #071023 0%, #061021 60%); color:#e6eef6; margin:0; min-height:100vh}
+    .wrap{max-width:1200px;margin:28px auto;padding:20px}
+    header{display:flex;align-items:center;gap:16px;margin-bottom:18px}
+    .brand{display:flex;align-items:center;gap:12px}
+    .logo{width:48px;height:48px;border-radius:10px;background:linear-gradient(135deg,var(--accent),#7c3aed);display:flex;align-items:center;justify-content:center;font-weight:800;color:#021627}
+    h1{font-size:20px;margin:0}
+    p.lead{margin:0;color:var(--muted);font-size:13px}
+
+    /* grid */
+    .grid{display:grid;grid-template-columns:320px 1fr;gap:18px}
+    .col-left{display:flex;flex-direction:column;gap:18px}
+    .card{background:linear-gradient(180deg,var(--card),transparent);padding:16px;border-radius:12px;box-shadow:0 6px 22px rgba(2,6,23,0.6);border:1px solid rgba(255,255,255,0.03)}
+
+    /* risk summary */
+    .risk-score{display:flex;flex-direction:column;gap:10px}
+    .score-big{font-size:44px;font-weight:800;color:var(--accent)}
+    .trend{font-size:13px;color:var(--muted)}
+    .small-metrics{display:flex;gap:12px;flex-wrap:wrap}
+    .metric{background:var(--glass);padding:10px;border-radius:10px;min-width:120px}
+    .metric strong{display:block;font-size:18px}
+    .btn{display:inline-block;padding:8px 12px;border-radius:8px;background:linear-gradient(90deg,#0ea5a4,#7c3aed);cursor:pointer;border:none;color:#021627;font-weight:700}
+
+    /* charts */
+    .charts{display:grid;grid-template-columns:1fr 320px;gap:18px}
+    canvas{background:transparent}
+
+    /* alerts */
+    table{width:100%;border-collapse:collapse;font-size:13px}
+    th,td{padding:10px 8px;text-align:left;border-bottom:1px solid rgba(255,255,255,0.03)}
+    th{color:var(--muted);font-weight:600}
+    .severity{padding:6px 8px;border-radius:8px;font-weight:700}
+    .sev-high{background:linear-gradient(90deg,var(--danger),#ff855d);color:#200;a}
+    .sev-med{background:linear-gradient(90deg,#ffb86b,#ffd27a);color:#2b1a00}
+    .sev-low{background:linear-gradient(90deg,#9be7c4,#7ee0c8);color:#07311a}
+
+    /* next steps */
+    .next-steps h3{margin:0 0 8px 0}
+    .step{background:var(--glass-2);padding:10px;border-radius:8px;margin-bottom:8px}
+    .actions{display:flex;gap:8px}
+
+    footer{margin-top:18px;color:var(--muted);font-size:13px;text-align:center}
+
+    @media (max-width:980px){
+      .grid{grid-template-columns:1fr}
+      .charts{grid-template-columns:1fr}
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <div class="brand">
+        <div class="logo">CG</div>
+        <div>
+          <h1>Corepay Guardian AI</h1>
+          <p class="lead">Real-time risk monitoring · Fraud alerts · Suggested next steps</p>
+        </div>
+      </div>
+      <div style="margin-left:auto;display:flex;gap:10px;align-items:center">
+        <button id="simulateBtn" class="btn">Simulate Event</button>
+        <button id="exportBtn" class="btn" style="background:linear-gradient(90deg,#334155,#475569);color:#e6eef6">Export CSV</button>
+      </div>
+    </header>
+
+    <div class="grid">
+      <div class="col-left">
+        <div class="card risk-score">
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <div>
+              <div style="color:var(--muted);font-size:13px">Overall risk score (0-100)</div>
+              <div class="score-big" id="overallScore">32</div>
+              <div class="trend" id="scoreTrend">Stable</div>
+            </div>
+            <div style="text-align:right">
+              <div style="color:var(--muted);font-size:13px">Active alerts</div>
+              <div style="font-weight:800;font-size:20px;color:#ffd166" id="activeAlertsCount">2</div>
+            </div>
+          </div>
+
+          <div style="margin-top:12px" class="small-metrics">
+            <div class="metric">
+              <div style="color:var(--muted);font-size:12px">Avg. risk (24h)</div>
+              <strong id="avg24">27</strong>
+            </div>
+            <div class="metric">
+              <div style="color:var(--muted);font-size:12px">Alerts (24h)</div>
+              <strong id="alerts24">14</strong>
+            </div>
+            <div class="metric">
+              <div style="color:var(--muted);font-size:12px">Auto-blocked</div>
+              <strong id="blockedCount">3</strong>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3 style="margin:0 0 8px 0">Recent alerts</h3>
+          <div style="max-height:360px;overflow:auto">
+            <table id="alertsTable">
+              <thead>
+                <tr><th>Time</th><th>Type</th><th>Risk</th><th>Entity</th><th></th></tr>
+              </thead>
+              <tbody>
+                <!-- rows inserted dynamically -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="card next-steps">
+          <h3>Suggested next steps</h3>
+          <div id="stepsList">
+            <!-- steps inserted dynamically -->
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <div class="card charts">
+          <div>
+            <canvas id="riskChart" height="160"></canvas>
+            <div style="display:flex;gap:12px;align-items:center;margin-top:8px">
+              <div style="color:var(--muted)">Time range</div>
+              <select id="rangeSelect" style="margin-left:6px;padding:6px;border-radius:8px;background:transparent;color:#e6eef6;border:1px solid rgba(255,255,255,0.04)">
+                <option value="1">Last hour</option>
+                <option value="24" selected>Last 24h</option>
+                <option value="168">Last 7d</option>
+              </select>
+              <div style="margin-left:auto;color:var(--muted)">Last update: <span id="lastUpdate">—</span></div>
+            </div>
+          </div>
+          <div style="width:320px;margin-left:18px">
+            <canvas id="alertsBar" height="160"></canvas>
+            <div style="margin-top:10px;color:var(--muted);font-size:13px">Alert categories</div>
+          </div>
+        </div>
+
+        <div style="height:18px"></div>
+        <div class="card">
+          <h3 style="margin:0 0 8px 0">Investigations</h3>
+          <p style="color:var(--muted);margin-top:0">Open investigations and outcome suggestions</p>
+          <div id="investigationsList"></div>
+        </div>
+      </div>
+    </div>
+
+    <footer>
+      Corepay Guardian AI · Demo dashboard · Not for production
+    </footer>
+  </div>
+
+  <script>
+    // Configuration
+    const SOCKET_SERVER_URL = null; // set to 'https://your-server.example' to connect
+    const FALLBACK_SIMULATION = true; // keep true to allow demo without a server
+
+    // DOM refs
+    const overallScoreEl = document.getElementById('overallScore');
+    const scoreTrendEl = document.getElementById('scoreTrend');
+    const activeAlertsCountEl = document.getElementById('activeAlertsCount');
+    const avg24El = document.getElementById('avg24');
+    const alerts24El = document.getElementById('alerts24');
+    const blockedCountEl = document.getElementById('blockedCount');
+    const alertsTableBody = document.querySelector('#alertsTable tbody');
+    const stepsList = document.getElementById('stepsList');
+    const investigationsList = document.getElementById('investigationsList');
+    const lastUpdateEl = document.getElementById('lastUpdate');
+
+    // Chart.js setups
+    const riskCtx = document.getElementById('riskChart').getContext('2d');
+    const alertsCtx = document.getElementById('alertsBar').getContext('2d');
+
+    const riskData = {labels:[], datasets:[{label:'Risk score',data:[],tension:0.35, borderWidth:2, fill:true, backgroundColor:(ctx)=>{return 'rgba(6,182,212,0.06)';}, borderColor:'#06b6d4', pointRadius:2}]};
+    const riskChart = new Chart(riskCtx,{type:'line',data:riskData,options:{responsive:true,maintainAspectRatio:false,scales:{x:{display:true,ticks:{color:'#9aa4b2'}},y:{min:0,max:100,ticks:{color:'#9aa4b2'}}},plugins:{legend:{display:false}}}});
+
+    const alertsData = {labels:['Payment','Account','Chargeback','Velocity','Other'],datasets:[{label:'Count',data:[0,0,0,0,0],borderRadius:6,barPercentage:0.7}]};
+    const alertsChart = new Chart(alertsCtx,{type:'bar',data:alertsData,options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,scales:{x:{ticks:{color:'#9aa4b2'}},y:{ticks:{color:'#9aa4b2'}}},plugins:{legend:{display:false}}}});
+
+    // Internal state
+    let alerts = []; // {id,time,type,risk,entity,handled}
+    let investigations = [];
+
+    // Utilities
+    function formatTime(ts){ const d=new Date(ts); return d.toLocaleString(); }
+
+    function computeOverallScore(){
+      if(riskData.datasets[0].data.length===0) return 0;
+      const arr = riskData.datasets[0].data.slice(-24*2); // recent values
+      const avg = Math.round(arr.reduce((a,b)=>a+b,0)/arr.length);
+      return avg;
+    }
+
+    function refreshSummary(){
+      const overall = computeOverallScore();
+      overallScoreEl.textContent = overall;
+      const previous = riskData.datasets[0].data[riskData.datasets[0].data.length-2] ?? overall;
+      const trend = overall - previous;
+      scoreTrendEl.textContent = trend>0? `Up ${trend}` : trend<0? `Down ${Math.abs(trend)}` : 'Stable';
+      avg24El.textContent = Math.round((riskData.datasets[0].data.slice(-48).reduce((a,b)=>a+b,0) || 0) / Math.max(1, Math.min(48, riskData.datasets[0].data.length)));
+      alerts24El.textContent = alerts.filter(a=>Date.now()-a.time<24*3600*1000).length;
+      blockedCountEl.textContent = alerts.filter(a=>a.autoBlocked).length;
+      activeAlertsCountEl.textContent = alerts.filter(a=>!a.handled).length;
+    }
+
+    function pushRiskPoint(value, ts=Date.now()){
+      const label = new Date(ts).toLocaleTimeString();
+      riskData.labels.push(label);
+      riskData.datasets[0].data.push(value);
+      if(riskData.labels.length>200){ riskData.labels.shift(); riskData.datasets[0].data.shift(); }
+      riskChart.update();
+      lastUpdateEl.textContent = new Date(ts).toLocaleTimeString();
+      refreshSummary();
+    }
+
+    function addAlert(type, risk, entity, autoBlocked=false){
+      const id = 'A'+Math.random().toString(36).slice(2,9);
+      const alert = {id,time:Date.now(),type,risk,entity,handled:false,autoBlocked};
+      alerts.unshift(alert);
+      if(alerts.length>200) alerts.pop();
+      renderAlertsTable();
+      updateAlertsChart();
+      addSuggestedStep(alert);
+      refreshSummary();
+    }
+
+    function renderAlertsTable(){
+      alertsTableBody.innerHTML = '';
+      for(const a of alerts.slice(0,80)){
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td>${formatTime(a.time)}</td>
+          <td>${a.type}</td>
+          <td><strong>${a.risk}</strong></td>
+          <td>${a.entity}</td>
+          <td style="text-align:right">
+            <div class="actions">
+              <button onclick="handleAlert('${a.id}')" class="btn">Mark</button>
+              <button onclick="openInvestigation('${a.id}')" class="btn" style="background:linear-gradient(90deg,#ffb86b,#ffd27a);color:#021627">Investigate</button>
+            </div>
+          </td>
+        `;
+        alertsTableBody.appendChild(tr);
+      }
+    }
+
+    function updateAlertsChart(){
+      const categories = alertsData.labels;
+      const counts = categories.map(c=>alerts.filter(a=>a.type===c).length);
+      alertsData.datasets[0].data = counts;
+      alertsChart.update();
+    }
+
+    function addSuggestedStep(alert){
+      const el = document.createElement('div'); el.className='step';
+      el.id = 'step-'+alert.id;
+      el.innerHTML = `<div style='display:flex;justify-content:space-between;align-items:start'>
+        <div>
+          <strong>${alert.type} — Risk ${alert.risk}</strong>
+          <div style='color:${'var(--muted)'};font-size:12px'>Entity ${alert.entity} — ${new Date(alert.time).toLocaleString()}</div>
+        </div>
+        <div style='text-align:right'>
+          <button class='btn' onclick="handleAlert('${alert.id}')">Mark handled</button>
+        </div>
+      </div>
+      <div style='margin-top:8px;color:var(--muted);font-size:13px'>Suggested: ${suggestedFor(alert)}</div>`;
+      stepsList.prepend(el);
+    }
+
+    function suggestedFor(alert){
+      if(alert.risk>=80) return 'Block card/account. Contact customer. Full investigation.';
+      if(alert.risk>=50) return 'Temporarily hold transaction. Request verification.';
+      return 'Monitor and flag for review.';
+    }
+
+    function handleAlert(id){
+      const a = alerts.find(x=>x.id===id); if(!a) return;
+      a.handled = true;
+      const stepEl = document.getElementById('step-'+id); if(stepEl) stepEl.style.opacity=0.5;
+      renderAlertsTable(); refreshSummary();
+    }
+
+    function openInvestigation(id){
+      const a = alerts.find(x=>x.id===id); if(!a) return;
+      const el = document.createElement('div'); el.className='step';
+      el.innerHTML = `<strong>Investigation for ${a.entity}</strong><div style='color:var(--muted);font-size:13px;margin-top:6px'>Start: ${new Date().toLocaleString()}</div>
+      <div style='margin-top:8px'>
+        <button class='btn' onclick="completeInvestigation(this)">Mark complete</button>
+        <button class='btn' style='background:linear-gradient(90deg,#334155,#475569);color:#e6eef6' onclick="escalateInvestigation(this)">Escalate</button>
+      </div>`;
+      investigationsList.prepend(el);
+    }
+    function completeInvestigation(btn){ btn.closest('.step').style.opacity=0.6; }
+    function escalateInvestigation(btn){ btn.closest('.step').style.borderLeft='4px solid #ff6b6b'; }
+
+    // Export CSV
+    document.getElementById('exportBtn').addEventListener('click',()=>{
+      const rows = [['id','time','type','risk','entity','handled']];
+      for(const r of alerts) rows.push([r.id,new Date(r.time).toISOString(),r.type,r.risk,r.entity,r.handled]);
+      const csv = rows.map(r=>r.map(c=>`"${String(c).replace(/"/g,'""')}"`).join(',')).join('\n');
+      const blob = new Blob([csv],{type:'text/csv'});
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a'); a.href=url; a.download='corepay-alerts.csv'; a.click(); URL.revokeObjectURL(url);
+    });
+
+    // Simulation helpers
+    function randomInt(min,max){return Math.floor(Math.random()*(max-min+1))+min}
+    const types = ['Payment','Account','Chargeback','Velocity','Other'];
+    function simulateEvent(){
+      const type = types[randomInt(0,types.length-1)];
+      const risk = randomInt(5,95);
+      const entity = 'user_'+randomInt(1000,9999);
+      const autoBlocked = risk>85;
+      addAlert(type,risk,entity,autoBlocked);
+      // push risk point influenced by risk
+      const noise = Math.round(risk*0.4 + randomInt(-6,6));
+      pushRiskPoint(Math.max(0,Math.min(100,noise)));
+    }
+
+    // Wire simulate button
+    document.getElementById('simulateBtn').addEventListener('click',()=> simulateEvent());
+
+    // Socket.IO connection
+    function setupSocket(){
+      if(!window.io) return false;
+      try{
+        const socket = SOCKET_SERVER_URL? io(SOCKET_SERVER_URL) : io();
+        socket.on('connect',()=>console.log('socket connected',socket.id));
+        socket.on('disconnect',()=>console.log('socket disconnected'));
+        // expected server message: {type:'event',payload:{risk:34,type:'Payment',entity:'user_123'}}
+        socket.on('event', (msg)=>{
+          if(msg && msg.payload){
+            const p = msg.payload;
+            addAlert(p.type||'Other', p.risk||30, p.entity||'unknown', p.autoBlocked||false);
+            pushRiskPoint(p.risk||randomInt(5,80), Date.now());
+          }
+        });
+        return true;
+      }catch(e){console.warn('socket setup failed',e);return false}
+    }
+
+    // Try to initialize socket; otherwise fallback to simulation
+    const socketOk = SOCKET_SERVER_URL ? setupSocket() : false;
+    if(!socketOk && FALLBACK_SIMULATION){
+      // seed with a few points
+      for(let i=0;i<18;i++){ pushRiskPoint(20+Math.round(Math.sin(i/3)*12)+randomInt(-3,3), Date.now()-((18-i)*5*60*1000)); }
+      // seed alerts
+      addAlert('Payment',72,'user_8791',true);
+      addAlert('Account',46,'user_2371',false);
+      setInterval(()=>{ if(Math.random()<0.55) simulateEvent(); else pushRiskPoint(Math.max(0,Math.min(100,computeOverallScore()+randomInt(-6,6)))) }, 4000);
+    }
+
+    // expose some functions for debug buttons (used inline from generated HTML)
+    window.handleAlert = handleAlert;
+    window.openInvestigation = openInvestigation;
+    window.completeInvestigation = completeInvestigation;
+    window.escalateInvestigation = escalateInvestigation;
+
+    // initial refresh
+    refreshSummary();
+  </script>
+</body>
+</html>
